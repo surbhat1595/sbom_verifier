@@ -2,7 +2,6 @@
 
 > A comprehensive Software Bill of Materials (SBOM) verification toolkit that validates SBOM files for compliance, security vulnerabilities, and data quality using Snyk and industry-standard tools.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Shell Script](https://img.shields.io/badge/Shell-Bash-green.svg)](https://www.gnu.org/software/bash/)
 [![Snyk](https://img.shields.io/badge/Security-Snyk-purple.svg)](https://snyk.io/)
 
@@ -639,48 +638,10 @@ node --version
 sbom_verifier.sh --verbose problematic-sbom.json 2>&1
 ```
 
-## 📚 Examples Repository
-
-Check out our [examples repository](https://github.com/EvgeniyPatlan/sbom-examples) for:
-
-- 📄 Sample SBOM files in various formats
-- 🔧 Configuration templates
-- 🚀 CI/CD pipeline examples
-- 📊 Custom validation rules
-- 🐳 Docker integration examples
 
 ## 🤝 Contributing
 
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-### 🔄 Development Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/EvgeniyPatlan/sbom_verifier.git
-cd sbom_verifier
-
-# Run tests
-./test/run_tests.sh
-
-# Test installation script
-./test/test_installation.sh
-
-# Test verifier with sample files
-./test/test_verification.sh
-```
-
-### 🧪 Testing
-
-```bash
-# Test on different OS (using Docker)
-docker run -v $(pwd):/app ubuntu:22.04 /app/install_sbom_verifier.sh
-docker run -v $(pwd):/app centos:8 /app/install_sbom_verifier.sh
-
-# Test with sample SBOMs
-./sbom_verifier.sh test/fixtures/sample.spdx.json
-./sbom_verifier.sh test/fixtures/sample.cyclonedx.json
-```
 
 ## 🔒 Security Considerations
 
