@@ -45,7 +45,7 @@ detect_os() {
         log_error "Cannot detect OS distribution"
         exit 1
     fi
-
+    
     log_info "Detected OS: $OS $OS_VERSION"
 }
 
@@ -69,7 +69,7 @@ check_internet() {
 # Install packages based on OS
 install_system_packages() {
     log_info "Installing system packages..."
-
+    
     case "$OS" in
         ubuntu|debian)
             log_info "Installing packages for Ubuntu/Debian..."
@@ -109,30 +109,34 @@ install_system_packages() {
             fi
             ;;
     esac
-
+    
     log_success "System packages installed"
 }
 
 # Install Node.js and npm
 install_nodejs() {
     log_info "Installing Node.js and npm..."
-
+    
     # Check if Node.js is already installed
     if command -v node &> /dev/null && command -v npm &> /dev/null; then
         local node_version=$(node --version)
         log_info "Node.js already installed: $node_version"
         return 0
     fi
-
+    
     case "$OS" in
         ubuntu|debian)
             log_info "Installing Node.js via NodeSource repository..."
-            curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+            # Download and run the setup script directly
+            curl -fsSL https://deb.nodesource.com/setup_lts.x -o /tmp/nodesource_setup.sh
+            sudo bash /tmp/nodesource_setup.sh
             sudo apt install -y nodejs
             ;;
         rhel|centos|rocky|almalinux|fedora|amzn)
             log_info "Installing Node.js via NodeSource repository..."
-            curl -fsSL https://rpm.nodesource.com/setup_lts.x | sudo bash -
+            # Download and run the setup script directly
+            curl -fsSL https://rpm.nodesource.com/setup_lts.x -o /tmp/nodesource_setup.sh
+            sudo bash /tmp/nodesource_setup.sh
             if command -v dnf &> /dev/null; then
                 sudo dnf install -y nodejs
             else
@@ -154,7 +158,10 @@ install_nodejs() {
             fi
             ;;
     esac
-
+    
+    # Clean up temp file
+    rm -f /tmp/nodesource_setup.sh
+    
     # Verify installation
     if command -v node &> /dev/null && command -v npm &> /dev/null; then
         local node_version=$(node --version)
@@ -170,14 +177,14 @@ install_nodejs() {
 # Install Snyk CLI
 install_snyk() {
     log_info "Installing Snyk CLI..."
-
+    
     # Check if Snyk is already installed
     if command -v snyk &> /dev/null; then
         local snyk_version=$(snyk --version)
         log_info "Snyk already installed: $snyk_version"
         return 0
     fi
-
+    
     # Try npm installation first
     if command -v npm &> /dev/null; then
         log_info "Installing Snyk via npm..."
@@ -191,7 +198,7 @@ install_snyk() {
         log_info "npm not available, installing Snyk binary..."
         install_snyk_binary
     fi
-
+    
     # Verify installation
     if command -v snyk &> /dev/null; then
         local snyk_version=$(snyk --version)
@@ -205,10 +212,10 @@ install_snyk() {
 # Install Snyk binary directly
 install_snyk_binary() {
     log_info "Installing Snyk binary..."
-
+    
     local snyk_url="https://github.com/snyk/snyk/releases/latest/download/snyk-linux"
     local snyk_path="$INSTALL_DIR/snyk"
-
+    
     # Download Snyk binary
     if sudo curl -Lo "$snyk_path" "$snyk_url"; then
         sudo chmod +x "$snyk_path"
@@ -222,38 +229,72 @@ install_snyk_binary() {
 # Install SBOM verifier script
 install_sbom_verifier() {
     log_info "Installing SBOM verifier script..."
-
+    
     # Create temp directory
     mkdir -p "$TEMP_DIR"
-
-    # Download the verification script (you'll need to host this somewhere or embed it)
-    local script_url="https://raw.githubusercontent.com/EvgeniyPatlan/sbom_verifier/refs/heads/main/install_sbom_verifier.sh"
+    
+    # GitHub repository details
+    local repo_url="https://raw.githubusercontent.com/EvgeniyPatlan/sbom_verifier/refs/heads/main"
+    local script_url="$repo_url/sbom_verifier.sh"
     local script_path="$INSTALL_DIR/$SCRIPT_NAME"
-
-    # For now, we'll create the script inline (you can modify this to download from a URL)
-    cat > "$TEMP_DIR/$SCRIPT_NAME" << 'SCRIPT_EOF'
-#!/bin/bash
-# This is where the SBOM verifier script content would go
-# You can either embed the full script here or download it from a repository
-
-echo "SBOM Verifier Script"
-echo "This script would contain the full verification logic"
-echo "Run with: $0 <sbom-file>"
-SCRIPT_EOF
-
+    
+    log_info "Downloading SBOM verifier from: $script_url"
+    
+    # Try to download the script using curl first, then wget as fallback
+    if command -v curl >/dev/null 2>&1; then
+        if curl -fsSL "$script_url" -o "$TEMP_DIR/$SCRIPT_NAME"; then
+            log_success "SBOM verifier downloaded successfully with curl"
+        else
+            log_error "Failed to download SBOM verifier with curl"
+            exit 1
+        fi
+    elif command -v wget >/dev/null 2>&1; then
+        if wget -q -O "$TEMP_DIR/$SCRIPT_NAME" "$script_url"; then
+            log_success "SBOM verifier downloaded successfully with wget"
+        else
+            log_error "Failed to download SBOM verifier with wget"
+            exit 1
+        fi
+    else
+        log_error "Neither curl nor wget is available for downloading the script"
+        exit 1
+    fi
+    
+    # Verify the downloaded script is not empty and contains expected content
+    if [[ ! -s "$TEMP_DIR/$SCRIPT_NAME" ]]; then
+        log_error "Downloaded script is empty"
+        exit 1
+    fi
+    
+    # Basic verification that it's a bash script
+    if ! head -1 "$TEMP_DIR/$SCRIPT_NAME" | grep -q "#!/bin/bash"; then
+        log_error "Downloaded file does not appear to be a valid bash script"
+        exit 1
+    fi
+    
     # Install the script
-    sudo cp "$TEMP_DIR/$SCRIPT_NAME" "$script_path"
-    sudo chmod +x "$script_path"
-
-    log_success "SBOM verifier installed to $script_path"
+    if sudo cp "$TEMP_DIR/$SCRIPT_NAME" "$script_path"; then
+        sudo chmod +x "$script_path"
+        log_success "SBOM verifier installed to $script_path"
+        
+        # Verify installation
+        if [[ -x "$script_path" ]]; then
+            log_success "SBOM verifier script is executable and ready to use"
+        else
+            log_warning "Script installed but may not be executable"
+        fi
+    else
+        log_error "Failed to install SBOM verifier script"
+        exit 1
+    fi
 }
 
 # Verify all installations
 verify_installation() {
     log_info "Verifying installation..."
-
+    
     local all_good=true
-
+    
     # Check each dependency
     if command -v jq &> /dev/null; then
         log_success "jq: $(jq --version)"
@@ -261,56 +302,56 @@ verify_installation() {
         log_error "jq not found"
         all_good=false
     fi
-
+    
     if command -v xmllint &> /dev/null; then
         log_success "xmllint: $(xmllint --version 2>&1 | head -1)"
     else
         log_error "xmllint not found"
         all_good=false
     fi
-
+    
     if command -v file &> /dev/null; then
         log_success "file: $(file --version | head -1)"
     else
         log_error "file not found"
         all_good=false
     fi
-
+    
     if command -v curl &> /dev/null; then
         log_success "curl: $(curl --version | head -1)"
     else
         log_error "curl not found"
         all_good=false
     fi
-
+    
     if command -v node &> /dev/null; then
         log_success "node: $(node --version)"
     else
         log_error "node not found"
         all_good=false
     fi
-
+    
     if command -v npm &> /dev/null; then
         log_success "npm: $(npm --version)"
     else
         log_error "npm not found"
         all_good=false
     fi
-
+    
     if command -v snyk &> /dev/null; then
         log_success "snyk: $(snyk --version)"
     else
         log_error "snyk not found"
         all_good=false
     fi
-
+    
     if command -v "$SCRIPT_NAME" &> /dev/null; then
         log_success "SBOM verifier script installed"
     else
         log_error "SBOM verifier script not found"
         all_good=false
     fi
-
+    
     if $all_good; then
         log_success "All dependencies installed successfully!"
         return 0
@@ -329,8 +370,8 @@ cleanup() {
 # Show post-installation instructions
 show_post_install() {
     echo ""
-    echo "🎉 Installation Complete!"
-    echo "======================="
+    echo "Installation Complete!"
+    echo "====================="
     echo ""
     echo "Next steps:"
     echo "1. Authenticate with Snyk:"
@@ -369,18 +410,22 @@ handle_failure() {
 
 # Main installation function
 main() {
-    echo "🚀 SBOM Verifier Installation Script"
-    echo "==================================="
+    echo "SBOM Verifier Installation Script"
+    echo "================================="
     echo ""
-
+    
     # Parse command line arguments
     local verbose=false
+    local debug=false
     local force=false
-
+    
     while [[ $# -gt 0 ]]; do
         case $1 in
             --verbose|-v)
                 verbose=true
+                shift
+                ;;
+            --debug|-d)
                 set -x
                 shift
                 ;;
@@ -395,6 +440,7 @@ main() {
                 echo ""
                 echo "Options:"
                 echo "  --verbose, -v    Enable verbose output"
+                echo "  --debug, -d      Enable debug mode (shows all commands)"
                 echo "  --force, -f      Force reinstallation"
                 echo "  --help, -h       Show this help message"
                 echo ""
@@ -413,10 +459,10 @@ main() {
                 ;;
         esac
     done
-
+    
     # Set trap for cleanup on failure
     trap handle_failure ERR
-
+    
     # Run installation steps
     detect_os
     check_root
@@ -425,7 +471,7 @@ main() {
     install_nodejs
     install_snyk
     install_sbom_verifier
-
+    
     # Verify everything worked
     if verify_installation; then
         cleanup
