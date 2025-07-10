@@ -227,7 +227,7 @@ install_sbom_verifier() {
     mkdir -p "$TEMP_DIR"
 
     # Download the verification script (you'll need to host this somewhere or embed it)
-    local script_url="https://raw.githubusercontent.com/your-repo/sbom-tools/main/sbom_verifier.sh"
+    local script_url="https://raw.githubusercontent.com/EvgeniyPatlan/sbom_verifier/refs/heads/main/install_sbom_verifier.sh"
     local script_path="$INSTALL_DIR/$SCRIPT_NAME"
 
     # For now, we'll create the script inline (you can modify this to download from a URL)
