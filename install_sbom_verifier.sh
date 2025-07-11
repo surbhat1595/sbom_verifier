@@ -52,7 +52,7 @@ detect_os() {
 # Check if running as root
 check_root() {
     if [[ $EUID -eq 0 ]]; then
-        log_warning "Running as root. Consider running as regular user with sudo when needed."
+        log_warning "Running as root. Consider running as regular user with when needed."
     fi
 }
 
@@ -73,36 +73,36 @@ install_system_packages() {
     case "$OS" in
         ubuntu|debian)
             log_info "Installing packages for Ubuntu/Debian..."
-            sudo apt update
-            sudo apt install -y curl wget jq libxml2-utils file software-properties-common
+            apt update
+            apt install -y curl wget jq libxml2-utils file software-properties-common
             ;;
         rhel|centos|rocky|almalinux)
             log_info "Installing packages for RHEL/CentOS/Rocky/AlmaLinux..."
             if command -v dnf &> /dev/null; then
-                sudo dnf install -y curl wget jq libxml2 file
+                dnf install -y curl wget jq libxml2 file
             else
-                sudo yum install -y curl wget jq libxml2 file
+                yum install -y curl wget jq libxml2 file
             fi
             ;;
         fedora)
             log_info "Installing packages for Fedora..."
-            sudo dnf install -y curl wget jq libxml2 file
+            dnf install -y curl wget jq libxml2 file
             ;;
         amzn)
             log_info "Installing packages for Amazon Linux..."
-            sudo yum update -y
-            sudo yum install -y curl wget jq libxml2 file
+            yum update -y
+            yum install -y curl wget jq libxml2 file
             ;;
         *)
             log_warning "Unknown OS: $OS. Attempting generic installation..."
             # Try to detect package manager
             if command -v apt &> /dev/null; then
-                sudo apt update
-                sudo apt install -y curl wget jq libxml2-utils file
+                apt update
+                apt install -y curl wget jq libxml2-utils file
             elif command -v dnf &> /dev/null; then
-                sudo dnf install -y curl wget jq libxml2 file
+                dnf install -y curl wget jq libxml2 file
             elif command -v yum &> /dev/null; then
-                sudo yum install -y curl wget jq libxml2 file
+                yum install -y curl wget jq libxml2 file
             else
                 log_error "No supported package manager found"
                 exit 1
@@ -129,29 +129,29 @@ install_nodejs() {
             log_info "Installing Node.js via NodeSource repository..."
             # Download and run the setup script directly
             curl -fsSL https://deb.nodesource.com/setup_lts.x -o /tmp/nodesource_setup.sh
-            sudo bash /tmp/nodesource_setup.sh
-            sudo apt install -y nodejs
+            bash /tmp/nodesource_setup.sh
+            apt install -y nodejs
             ;;
         rhel|centos|rocky|almalinux|fedora|amzn)
             log_info "Installing Node.js via NodeSource repository..."
             # Download and run the setup script directly
             curl -fsSL https://rpm.nodesource.com/setup_lts.x -o /tmp/nodesource_setup.sh
-            sudo bash /tmp/nodesource_setup.sh
+            bash /tmp/nodesource_setup.sh
             if command -v dnf &> /dev/null; then
-                sudo dnf install -y nodejs
+                dnf install -y nodejs
             else
-                sudo yum install -y nodejs
+                yum install -y nodejs
             fi
             ;;
         *)
             log_warning "Attempting generic Node.js installation..."
             # Try package manager approach first
             if command -v apt &> /dev/null; then
-                sudo apt install -y nodejs npm
+                apt install -y nodejs npm
             elif command -v dnf &> /dev/null; then
-                sudo dnf install -y nodejs npm
+                dnf install -y nodejs npm
             elif command -v yum &> /dev/null; then
-                sudo yum install -y nodejs npm
+                yum install -y nodejs npm
             else
                 log_error "Cannot install Node.js automatically"
                 exit 1
@@ -188,7 +188,7 @@ install_snyk() {
     # Try npm installation first
     if command -v npm &> /dev/null; then
         log_info "Installing Snyk via npm..."
-        if sudo npm install -g snyk; then
+        if npm install -g snyk; then
             log_success "Snyk installed via npm"
         else
             log_warning "npm installation failed, trying binary installation..."
@@ -217,8 +217,8 @@ install_snyk_binary() {
     local snyk_path="$INSTALL_DIR/snyk"
     
     # Download Snyk binary
-    if sudo curl -Lo "$snyk_path" "$snyk_url"; then
-        sudo chmod +x "$snyk_path"
+    if curl -Lo "$snyk_path" "$snyk_url"; then
+        chmod +x "$snyk_path"
         log_success "Snyk binary installed to $snyk_path"
     else
         log_error "Failed to download Snyk binary"
@@ -273,8 +273,8 @@ install_sbom_verifier() {
     fi
     
     # Install the script
-    if sudo cp "$TEMP_DIR/$SCRIPT_NAME" "$script_path"; then
-        sudo chmod +x "$script_path"
+    if cp "$TEMP_DIR/$SCRIPT_NAME" "$script_path"; then
+        chmod +x "$script_path"
         log_success "SBOM verifier installed to $script_path"
         
         # Verify installation
@@ -395,7 +395,7 @@ handle_failure() {
     echo ""
     echo "Troubleshooting:"
     echo "1. Check your internet connection"
-    echo "2. Verify you have sudo privileges"
+    echo "2. Verify you have privileges"
     echo "3. Try running with --verbose for more details"
     echo "4. Check the logs above for specific error messages"
     echo ""
