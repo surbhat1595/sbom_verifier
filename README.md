@@ -1,28 +1,34 @@
 # 🛡️ SBOM Verifier
 
-> A comprehensive Software Bill of Materials (SBOM) verification toolkit that validates SBOM files for compliance, security vulnerabilities, and data quality using Snyk and industry-standard tools.
+> A comprehensive Software Bill of Materials (SBOM) verification toolkit that validates SBOM files for compliance, security vulnerabilities, and data quality using Trivy, Snyk, and industry-standard tools.
 
 [![Shell Script](https://img.shields.io/badge/Shell-Bash-green.svg)](https://www.gnu.org/software/bash/)
+[![Trivy](https://img.shields.io/badge/Security-Trivy-blue.svg)](https://trivy.dev/)
 [![Snyk](https://img.shields.io/badge/Security-Snyk-purple.svg)](https://snyk.io/)
 
 ## ✨ Features
 
 - 🔍 **Multi-format Support**: SPDX (JSON, XML, Tag-Value), CycloneDX (JSON, XML)
-- 🛡️ **Security Scanning**: Integration with Snyk for vulnerability detection
-- 📄 **License Compliance**: Automated license policy checking
+- 🛡️ **Dual Security Scanning**: Integration with Trivy and Snyk for comprehensive vulnerability detection
+- 🚀 **Trivy Integration**: Fast, comprehensive vulnerability scanning with extensive database coverage
+- 🔐 **License Compliance**: Automated license policy checking and detection
 - ✅ **Format Validation**: Schema and structure verification
 - 📊 **Content Analysis**: Component completeness and quality assessment
-- 🌍 **Cross-platform**: Ubuntu, Debian, RHEL, CentOS, Fedora, Rocky Linux, AlmaLinux, Amazon Linux
+- 🌍 **Cross-platform**: Ubuntu, Debian, RHEL, CentOS, Fedora, Rocky Linux, AlmaLinux, Amazon Linux, Oracle Linux
 - 🔧 **Flexible Authentication**: CLI args, environment variables, or interactive auth
-- 🎯 **Organization Support**: Multi-tenant Snyk organization handling
+- 🎯 **Tool Selection**: Run with Trivy only, Snyk only, or both tools
+- ⚡ **Performance Options**: Skip database updates for faster execution
 
 ## 🚀 Quick Start
 
 ### One-Line Installation
 
 ```bash
-# Download and install everything automatically
+# Download and install everything automatically (Trivy + Snyk + dependencies)
 curl -fsSL https://raw.githubusercontent.com/EvgeniyPatlan/sbom_verifier/main/install_sbom_verifier.sh | bash
+
+# Install only Trivy and basic tools (faster, no Node.js/Snyk)
+curl -fsSL https://raw.githubusercontent.com/EvgeniyPatlan/sbom_verifier/main/install_sbom_verifier.sh | bash -s -- --trivy-only
 ```
 
 ### Manual Installation
@@ -33,34 +39,52 @@ curl -fsSL https://raw.githubusercontent.com/EvgeniyPatlan/sbom_verifier/main/in
 #### Ubuntu/Debian
 ```bash
 sudo apt update
-sudo apt install -y curl wget jq libxml2-utils file
-curl -fsSL https://deb.nodesource.com/setup_lts.x -o setup_nodejs.sh
-sudo bash setup_nodejs.sh && rm setup_nodejs.sh
+sudo apt install -y curl wget jq libxml2-utils file software-properties-common
+
+# Install Trivy
+wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+sudo apt update && sudo apt install -y trivy
+
+# Optional: Install Snyk
+curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
 sudo apt install -y nodejs
 sudo npm install -g snyk
 ```
 
-#### RHEL/CentOS/Fedora
+#### RHEL/CentOS/Fedora/Oracle Linux
 ```bash
 sudo dnf install -y curl wget jq libxml2 file  # or 'yum' for older systems
-curl -fsSL https://rpm.nodesource.com/setup_lts.x -o setup_nodejs.sh
-sudo bash setup_nodejs.sh && rm setup_nodejs.sh
+
+# Install Trivy
+sudo tee /etc/yum.repos.d/trivy.repo << 'EOF'
+[trivy]
+name=Trivy repository
+baseurl=https://aquasecurity.github.io/trivy-repo/rpm/releases/$releasever/$basearch/
+gpgcheck=1
+enabled=1
+gpgkey=https://aquasecurity.github.io/trivy-repo/rpm/public.key
+EOF
+sudo dnf install -y trivy
+
+# Optional: Install Snyk
+curl -fsSL https://rpm.nodesource.com/setup_lts.x | sudo bash -
 sudo dnf install -y nodejs
 sudo npm install -g snyk
 ```
 
 #### Download Scripts
 ```bash
-wget https://raw.githubusercontent.com/EvgeniyPatlan/sbom_verifier/main/sbom_verifier.sh
+wget https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/sbom_verifier.sh
 chmod +x sbom_verifier.sh
 sudo mv sbom_verifier.sh /usr/local/bin/
 ```
 
 </details>
 
-### Authentication Setup
+### Authentication Setup (Optional for Snyk)
 
-Choose your preferred authentication method:
+Trivy requires no authentication, but Snyk needs setup if you want to use both tools:
 
 #### Method 1: Environment Variables (Recommended for CI/CD)
 ```bash
@@ -85,11 +109,20 @@ snyk auth
 ### Basic Usage
 
 ```bash
-# Verify an SBOM file
+# Verify an SBOM file with both Trivy and Snyk
 sbom_verifier.sh sbom.json
+
+# Use only Trivy (no authentication needed)
+sbom_verifier.sh --trivy-only sbom.json
+
+# Use only Snyk
+sbom_verifier.sh --snyk-only sbom.json
 
 # With verbose output
 sbom_verifier.sh --verbose sbom.json
+
+# Skip Trivy database update for faster execution
+sbom_verifier.sh --skip-trivy-update sbom.json
 
 # Show help
 sbom_verifier.sh --help
@@ -107,38 +140,59 @@ sbom_verifier.sh -t "abc123" -o "my-org" -v sbom.json
 # Using environment variables
 export SNYK_TOKEN="abc123" SNYK_ORG="my-org"
 sbom_verifier.sh sbom.json
+
+# Trivy-only with verbose output (great for CI/CD)
+sbom_verifier.sh --trivy-only --verbose sbom.json
 ```
 
 ### Real-World Examples
 
 <details>
-<summary>🎯 Example: Successful SPDX Verification</summary>
+<summary>🎯 Example: Successful Trivy + Snyk Verification</summary>
 
 ```bash
-$ sbom_verifier.sh my-app-sbom.spdx.json
+$ sbom_verifier.sh --verbose my-app-sbom.spdx.json
 
 SBOM Verification Script
 ========================
+Running in verbose mode...
 
 [INFO] Checking dependencies...
-[SUCCESS] Snyk CLI found
+[SUCCESS] Snyk CLI found (1.1291.0)
+[SUCCESS] Trivy found (version 0.48.3)
 [SUCCESS] jq found
 [SUCCESS] xmllint found
 [SUCCESS] Dependency check completed
+[INFO] Updating Trivy vulnerability database...
+[SUCCESS] Trivy database updated successfully
 [INFO] Checking Snyk authentication...
 [SUCCESS] Snyk authentication verified via token
 [INFO] Verifying file integrity...
 [SUCCESS] File integrity check passed
 [INFO] Detected format: spdx-json
+[INFO] File size: 156 KB
 [INFO] Verifying JSON format...
 [INFO] Validating SPDX JSON format...
 [INFO] Found 45 packages
 [INFO] Found 12 relationships
 [SUCCESS] JSON format validation passed
+[INFO] Starting Trivy verification...
+[INFO] Verifying SBOM with Trivy...
+[SUCCESS] Trivy SBOM scan completed successfully
+[INFO] Analyzing Trivy results...
+[INFO] Packages scanned: 45
+[INFO] Vulnerabilities found:
+    Critical: 1
+    High: 3
+    Medium: 8
+    Low: 12
+    Unknown: 0
+[ERROR] Found 1 CRITICAL vulnerabilities
+[WARNING] Found 3 HIGH severity vulnerabilities
+[INFO] Starting Snyk verification...
 [INFO] Verifying SBOM with Snyk...
-[INFO] Using Snyk SBOM command...
 [SUCCESS] Snyk SBOM verification passed
-[INFO] Found 2 vulnerabilities
+[INFO] Found 4 vulnerabilities
 [INFO] Found 1 license issues
 [WARNING] Vulnerabilities found in SBOM components
 [INFO] Analyzing SBOM content...
@@ -147,54 +201,79 @@ SBOM Verification Script
 [INFO] Components with licenses: 38
 [SUCCESS] Content analysis completed
 
-📊 SBOM Verification Report
-==========================
+SBOM Verification Report
+========================
 File: my-app-sbom.spdx.json
 Format: spdx-json
-Timestamp: Thu Jul 10 15:30:25 UTC 2025
+Timestamp: Thu Jul 29 15:30:25 UTC 2025
+
+Tools used:
+  - Trivy: 0.48.3
+  - Snyk: 1.1291.0
+  - jq: jq-1.6
+  - xmllint: available
 
 Results:
-  ✅ Errors: 0
-  ⚠  Warnings: 2
-  ℹ  Info: 12
+  Errors: 1
+  Warnings: 4
+  Info messages: 15
 
-✅ SBOM verification PASSED
+❌ SBOM verification FAILED
+  Please address the 1 error(s) found
 ```
 
 </details>
 
 <details>
-<summary>❌ Example: Failed Verification</summary>
+<summary>⚡ Example: Fast Trivy-Only Verification</summary>
 
 ```bash
-$ sbom_verifier.sh invalid-sbom.json
+$ sbom_verifier.sh --trivy-only --skip-trivy-update sbom.json
 
 SBOM Verification Script
 ========================
 
 [INFO] Checking dependencies...
+[SUCCESS] Trivy found (version 0.48.3)
+[SUCCESS] jq found
 [SUCCESS] Dependency check completed
-[WARNING] Snyk not authenticated. Some features may be limited.
+[INFO] Skipping Trivy database update as requested
 [INFO] Verifying file integrity...
 [SUCCESS] File integrity check passed
-[INFO] Detected format: spdx-json
+[INFO] Detected format: cyclonedx-json
 [INFO] Verifying JSON format...
-[INFO] Validating SPDX JSON format...
-[ERROR] Missing required field: spdxVersion
-[ERROR] Invalid JSON syntax
+[INFO] Validating CycloneDX JSON format...
+[INFO] Found 23 components
+[INFO] Found 15 dependencies
+[SUCCESS] JSON format validation passed
+[INFO] Verifying SBOM with Trivy...
+[SUCCESS] Trivy SBOM scan completed successfully
+[INFO] Packages scanned: 23
+[INFO] Vulnerabilities found:
+    Critical: 0
+    High: 0
+    Medium: 2
+    Low: 5
+    Unknown: 0
+[INFO] Analyzing SBOM content...
+[SUCCESS] Content analysis completed
 
-📊 SBOM Verification Report
-==========================
-File: invalid-sbom.json
-Format: spdx-json
-Timestamp: Thu Jul 10 15:35:12 UTC 2025
+SBOM Verification Report
+========================
+File: sbom.json
+Format: cyclonedx-json
+Timestamp: Thu Jul 29 15:35:12 UTC 2025
+
+Tools used:
+  - Trivy: 0.48.3
+  - jq: jq-1.6
 
 Results:
-  ✅ Errors: 2
-  ⚠  Warnings: 1
-  ℹ  Info: 8
+  Errors: 0
+  Warnings: 0
+  Info messages: 10
 
-❌ SBOM verification FAILED
+✅ SBOM verification PASSED
 ```
 
 </details>
@@ -206,29 +285,44 @@ Results:
 | Option | Short | Description | Example |
 |--------|-------|-------------|---------|
 | `--verbose` | `-v` | Enable detailed output | `-v` |
+| `--trivy-only` | | Run only Trivy verification | `--trivy-only` |
+| `--snyk-only` | | Run only Snyk verification | `--snyk-only` |
+| `--skip-trivy-update` | | Skip Trivy database update | `--skip-trivy-update` |
 | `--snyk-token` | `-t` | Set Snyk API token | `-t abc123` |
 | `--snyk-org` | `-o` | Set Snyk organization | `-o my-org` |
 | `--help` | `-h` | Show help message | `-h` |
 
 ### 📁 Supported SBOM Formats
 
-| Format | File Extensions | Schema Validation | Content Analysis |
-|--------|----------------|-------------------|------------------|
-| **SPDX JSON** | `.spdx.json`, `.json` | ✅ Full | ✅ Full |
-| **SPDX XML** | `.spdx.xml`, `.xml` | ✅ Full | ⚠️ Basic |
-| **SPDX Tag-Value** | `.spdx`, `.txt` | ⚠️ Basic | ⚠️ Basic |
-| **CycloneDX JSON** | `.json` | ✅ Full | ✅ Full |
-| **CycloneDX XML** | `.xml` | ✅ Full | ⚠️ Basic |
+| Format | File Extensions | Schema Validation | Content Analysis | Trivy Support | Snyk Support |
+|--------|----------------|-------------------|------------------|---------------|--------------|
+| **SPDX JSON** | `.spdx.json`, `.json` | ✅ Full | ✅ Full | ✅ Full | ✅ Full |
+| **SPDX XML** | `.spdx.xml`, `.xml` | ✅ Full | ⚠️ Basic | ✅ Full | ⚠️ Limited |
+| **SPDX Tag-Value** | `.spdx`, `.txt` | ⚠️ Basic | ⚠️ Basic | ✅ Full | ⚠️ Limited |
+| **CycloneDX JSON** | `.json` | ✅ Full | ✅ Full | ✅ Full | ✅ Full |
+| **CycloneDX XML** | `.xml` | ✅ Full | ⚠️ Basic | ✅ Full | ⚠️ Limited |
 
 **Legend**: ✅ Full support, ⚠️ Basic support
 
 ## 🔍 What Gets Verified
 
-### 🛡️ Security Analysis (via Snyk)
-- ✅ Known vulnerability detection
+### 🛡️ Security Analysis
+
+#### **Trivy Scanner** (Primary - No Auth Required)
+- ✅ Known vulnerability detection with extensive CVE database
+- ✅ License detection and compliance checking
+- ✅ Secret detection capabilities
+- ✅ Supply chain security analysis
+- ✅ Fast, offline-capable scanning
+- ✅ Regular database updates
+- ✅ Severity-based vulnerability categorization
+
+#### **Snyk Scanner** (Optional - Requires Authentication)
+- ✅ Commercial vulnerability database
 - ✅ License policy compliance
 - ✅ Dependency security scoring
 - ✅ Supply chain risk assessment
+- ✅ Organization-specific policies
 
 ### 📝 Format Compliance
 - ✅ **SPDX**: Required fields (`spdxVersion`, `SPDXID`, `creationInfo`, `name`)
@@ -250,7 +344,18 @@ Results:
 
 ## 🔐 Authentication Methods
 
-### Priority Order (Highest to Lowest)
+### Trivy (Recommended - No Authentication Required)
+
+Trivy works out of the box with no setup required:
+
+```bash
+# Just run it - no tokens needed!
+sbom_verifier.sh --trivy-only sbom.json
+```
+
+### Snyk (Optional - Requires Setup)
+
+#### Priority Order (Highest to Lowest)
 
 1. **🎯 Command Line Arguments**
    ```bash
@@ -289,7 +394,7 @@ snyk organizations
 ### GitHub Actions
 
 ```yaml
-name: SBOM Verification
+name: SBOM Verification with Trivy
 on: [push, pull_request]
 
 jobs:
@@ -300,14 +405,18 @@ jobs:
 
     - name: Install SBOM Verifier
       run: |
-        curl -fsSL https://raw.githubusercontent.com/EvgeniyPatlan/sbom_verifier/main/install_sbom_verifier.sh | bash
+        curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install_sbom_verifier.sh | bash
 
-    - name: Verify SBOM
+    - name: Verify SBOM with Trivy (Fast)
+      run: |
+        sbom_verifier.sh --trivy-only artifacts/sbom.json
+
+    - name: Verify SBOM with Both Tools (Comprehensive)
       env:
         SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         SNYK_ORG: ${{ vars.SNYK_ORG }}
       run: |
-        sbom_verifier.sh artifacts/sbom.json
+        sbom_verifier.sh --verbose artifacts/sbom.json
 ```
 
 ### Jenkins Pipeline
@@ -322,12 +431,18 @@ pipeline {
     stages {
         stage('Install') {
             steps {
-                sh 'curl -fsSL https://raw.githubusercontent.com/EvgeniyPatlan/sbom_verifier/refs/heads/main/install_sbom_verifier.sh | bash'
+                sh 'curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install_sbom_verifier.sh | bash'
             }
         }
-        stage('Verify SBOM') {
+        stage('Fast Trivy Scan') {
             steps {
-                sh 'sbom_verifier.sh artifacts/sbom.json'
+                sh 'sbom_verifier.sh --trivy-only --skip-trivy-update artifacts/sbom.json'
+            }
+        }
+        stage('Comprehensive Scan') {
+            when { branch 'main' }
+            steps {
+                sh 'sbom_verifier.sh --verbose artifacts/sbom.json'
             }
         }
     }
@@ -337,15 +452,39 @@ pipeline {
 ### GitLab CI
 
 ```yaml
-sbom-verification:
-  stage: verify
+stages:
+  - install
+  - verify-fast
+  - verify-comprehensive
+
+install-tools:
+  stage: install
+  script:
+    - curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install_sbom_verifier.sh | bash -s -- --trivy-only
+  artifacts:
+    paths:
+      - /usr/local/bin/sbom_verifier.sh
+    expire_in: 1 hour
+
+trivy-verification:
+  stage: verify-fast
+  dependencies:
+    - install-tools
+  script:
+    - sbom_verifier.sh --trivy-only sbom.json
+
+comprehensive-verification:
+  stage: verify-comprehensive
+  dependencies:
+    - install-tools
   variables:
     SNYK_ORG: "production-team"
-  before_script:
-    - curl -fsSL https://raw.githubusercontent.com/EvgeniyPatlan/sbom_verifier/refs/heads/main/install_sbom_verifier.sh | bash
-    - export SNYK_TOKEN=$SNYK_TOKEN_SECRET
   script:
-    - sbom_verifier.sh sbom.json
+    - export SNYK_TOKEN=$SNYK_TOKEN_SECRET
+    - sbom_verifier.sh --verbose sbom.json
+  only:
+    - main
+    - develop
 ```
 
 ### Docker Integration
@@ -353,10 +492,10 @@ sbom-verification:
 ```dockerfile
 FROM ubuntu:22.04
 
-# Install SBOM verifier
-RUN curl -fsSL https://raw.githubusercontent.com/EvgeniyPatlan/sbom_verifier/refs/heads/main/sbom_verifier.sh | bash
+# Install SBOM verifier with Trivy
+RUN curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install_sbom_verifier.sh | bash
 
-# Set up environment
+# Set up environment (optional for Snyk)
 ENV SNYK_TOKEN=""
 ENV SNYK_ORG=""
 
@@ -365,11 +504,14 @@ COPY sbom.json /app/sbom.json
 
 # Verify on container start
 ENTRYPOINT ["sbom_verifier.sh"]
-CMD ["/app/sbom.json"]
+CMD ["--trivy-only", "/app/sbom.json"]
 ```
 
 ```bash
-# Run with authentication
+# Run with Trivy only (no authentication)
+docker run -v $(pwd)/sbom.json:/app/sbom.json my-sbom-verifier --trivy-only /app/sbom.json
+
+# Run with both tools
 docker run -e SNYK_TOKEN="$SNYK_TOKEN" -e SNYK_ORG="my-org" \
   -v $(pwd)/sbom.json:/app/sbom.json \
   my-sbom-verifier /app/sbom.json
@@ -382,8 +524,14 @@ The `install_sbom_verifier.sh` script provides automated installation:
 ### 🎯 Options
 
 ```bash
-# Basic installation
+# Install everything (Trivy + Snyk + dependencies)
 ./install_sbom_verifier.sh
+
+# Install only Trivy and basic tools (faster, no Node.js)
+./install_sbom_verifier.sh --trivy-only
+
+# Install only Snyk tools
+./install_sbom_verifier.sh --snyk-only
 
 # Verbose installation (shows detailed progress)
 ./install_sbom_verifier.sh --verbose
@@ -400,38 +548,44 @@ The `install_sbom_verifier.sh` script provides automated installation:
 
 ### 🖥️ Supported Operating Systems
 
-| OS Family | Versions | Package Manager | Status |
-|-----------|----------|-----------------|--------|
-| **Ubuntu** | 18.04+ | apt | ✅ Fully Tested |
-| **Debian** | 9+ | apt | ✅ Fully Tested |
-| **RHEL** | 7+ | yum/dnf | ✅ Fully Tested |
-| **CentOS** | 7+ | yum/dnf | ✅ Fully Tested |
-| **Rocky Linux** | 8+ | dnf | ✅ Fully Tested |
-| **AlmaLinux** | 8+ | dnf | ✅ Fully Tested |
-| **Fedora** | 30+ | dnf | ✅ Fully Tested |
-| **Amazon Linux** | 2 | yum | ✅ Fully Tested |
+| OS Family | Versions | Package Manager | Trivy | Snyk | Status |
+|-----------|----------|-----------------|-------|------|--------|
+| **Ubuntu** | 18.04+ | apt | ✅ Repo | ✅ npm | ✅ Fully Tested |
+| **Debian** | 9+ | apt | ✅ Repo | ✅ npm | ✅ Fully Tested |
+| **RHEL** | 7+ | yum/dnf | ✅ Repo | ✅ npm | ✅ Fully Tested |
+| **CentOS** | 7+ | yum/dnf | ✅ Repo | ✅ npm | ✅ Fully Tested |
+| **Rocky Linux** | 8+ | dnf | ✅ Repo | ✅ npm | ✅ Fully Tested |
+| **AlmaLinux** | 8+ | dnf | ✅ Repo | ✅ npm | ✅ Fully Tested |
+| **Oracle Linux** | 8+ | dnf | ✅ Binary | ✅ npm | ✅ Fully Tested |
+| **Fedora** | 30+ | dnf | ✅ Repo | ✅ npm | ✅ Fully Tested |
+| **Amazon Linux** | 2 | yum | ✅ Binary | ✅ npm | ✅ Fully Tested |
 
 ### 🔧 What Gets Installed
 
 1. **📦 System Packages**: `curl`, `wget`, `jq`, `libxml2-utils`/`libxml2`, `file`
-2. **🟢 Node.js & npm**: Latest LTS via NodeSource repository
-3. **🛡️ Snyk CLI**: Via npm (with binary fallback)
-4. **📝 SBOM Verifier**: Main verification script to `/usr/local/bin`
-5. **✅ Verification**: Tests all installations to ensure they work
+2. **🛡️ Trivy**: Latest version via repository or binary installation
+3. **🟢 Node.js & npm**: Latest LTS via NodeSource repository (if Snyk needed)
+4. **🔐 Snyk CLI**: Via npm (with binary fallback, if requested)
+5. **📝 SBOM Verifier**: Main verification script to `/usr/local/bin`
+6. **✅ Verification**: Tests all installations to ensure they work
+7. **📊 Database Update**: Initial Trivy vulnerability database setup
 
 ## 🔧 Advanced Usage
 
 ### 📊 Batch Processing
 
 ```bash
-# Verify multiple SBOM files
+# Verify multiple SBOM files with Trivy only (fast)
 for sbom in *.json; do
     echo "Verifying $sbom..."
-    sbom_verifier.sh "$sbom" || echo "Failed: $sbom"
+    sbom_verifier.sh --trivy-only "$sbom" || echo "Failed: $sbom"
 done
 
-# Generate report for all SBOMs
-find . -name "*.spdx.json" -exec sbom_verifier.sh {} \; > verification_report.txt
+# Generate comprehensive report for all SBOMs
+find . -name "*.spdx.json" -exec sbom_verifier.sh --verbose {} \; > verification_report.txt
+
+# Fast CI verification
+find . -name "*.json" -exec sbom_verifier.sh --trivy-only --skip-trivy-update {} \;
 ```
 
 ### 🐳 Container Scanning
@@ -439,11 +593,11 @@ find . -name "*.spdx.json" -exec sbom_verifier.sh {} \; > verification_report.tx
 ```bash
 # Extract SBOM from container and verify
 docker run --rm my-app:latest cat /app/sbom.json > container-sbom.json
-sbom_verifier.sh container-sbom.json
+sbom_verifier.sh --trivy-only container-sbom.json
 
 # Verify as part of container build
 COPY sbom.json /tmp/sbom.json
-RUN sbom_verifier.sh /tmp/sbom.json
+RUN sbom_verifier.sh --trivy-only /tmp/sbom.json
 ```
 
 ### 🔄 Automated Workflows
@@ -469,7 +623,16 @@ for sbom in "$SBOM_DIR"/*.json; do
 
     echo "Verifying $filename..."
 
-    if sbom_verifier.sh --snyk-org="$SNYK_ORG" "$sbom" > "$report_file" 2>&1; then
+    # Use Trivy for fast scanning, Snyk for comprehensive analysis
+    if [[ "$CI" == "true" ]]; then
+        # Fast CI mode
+        cmd="sbom_verifier.sh --trivy-only --skip-trivy-update"
+    else
+        # Comprehensive mode
+        cmd="sbom_verifier.sh --snyk-org=$SNYK_ORG --verbose"
+    fi
+
+    if $cmd "$sbom" > "$report_file" 2>&1; then
         echo "✅ $filename: PASSED"
     else
         echo "❌ $filename: FAILED (see $report_file)"
@@ -484,12 +647,17 @@ echo "Verification complete. Reports in $REPORT_DIR/"
 ### 🌍 Environment Variables
 
 ```bash
-# Core authentication
+# Core authentication (for Snyk)
 export SNYK_TOKEN="your-api-token"
 export SNYK_ORG="your-organization-id"
 
+# Tool selection
+export TRIVY_ONLY=true                # Use only Trivy
+export SNYK_ONLY=true                 # Use only Snyk
+export SKIP_TRIVY_UPDATE=true         # Skip Trivy DB updates
+
 # Optional configuration
-export SBOM_VERBOSE=true              # Enable verbose by default
+export VERBOSE=true                   # Enable verbose by default
 export SBOM_INSTALL_DIR="/custom/path" # Custom installation directory
 
 # Snyk-specific configuration
@@ -497,8 +665,24 @@ export SNYK_API="https://snyk.io/api"  # Custom API endpoint
 export SNYK_DISABLE_ANALYTICS=true     # Disable usage analytics
 ```
 
-### ⚙️ Snyk Configuration
+### ⚙️ Tool Configuration
 
+#### Trivy Configuration
+```bash
+# View Trivy configuration
+trivy --help
+
+# Custom cache directory
+export TRIVY_CACHE_DIR="/custom/cache"
+
+# Custom database update interval
+export TRIVY_OFFLINE_SCAN=true  # Disable online checks
+
+# Skip certain vulnerability types
+trivy sbom --severity HIGH,CRITICAL sbom.json
+```
+
+#### Snyk Configuration
 ```bash
 # View current configuration
 snyk config list
@@ -518,47 +702,72 @@ snyk config set proxy=http://proxy.company.com:8080
 ### ❓ Common Issues
 
 <details>
+<summary>🛡️ Trivy Database Update Failed</summary>
+
+**Problem**: `Failed to update Trivy database` warning
+
+**Solutions**:
+```bash
+# Manual database update
+trivy image --download-db-only
+
+# Skip updates for faster execution
+sbom_verifier.sh --skip-trivy-update sbom.json
+
+# Check network connectivity
+curl -I https://github.com/aquasecurity/trivy-db/releases/latest
+
+# Use offline mode
+export TRIVY_OFFLINE_SCAN=true
+sbom_verifier.sh --trivy-only sbom.json
+```
+
+</details>
+
+<details>
 <summary>🔑 Snyk Authentication Failed</summary>
 
 **Problem**: `Snyk not authenticated` error
 
 **Solutions**:
 ```bash
-# Method 1: Use token directly
+# Use Trivy only (no authentication needed)
+sbom_verifier.sh --trivy-only sbom.json
+
+# Use token directly
 sbom_verifier.sh --snyk-token="your-token" sbom.json
 
-# Method 2: Set environment variable
+# Set environment variable
 export SNYK_TOKEN="your-token"
 sbom_verifier.sh sbom.json
 
-# Method 3: Interactive authentication
+# Interactive authentication
 snyk auth
 
-# Method 4: Verify token is valid
+# Verify token is valid
 snyk auth --check
 ```
 
 </details>
 
 <details>
-<summary>📦 jq Command Not Found</summary>
+<summary>📦 Trivy Installation Failed</summary>
 
-**Problem**: `jq not found` warning
+**Problem**: Trivy repository not accessible
 
 **Solutions**:
 ```bash
-# Ubuntu/Debian
-sudo apt install jq
+# Manual binary installation
+curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
 
-# RHEL/CentOS/Fedora
-sudo dnf install jq  # or sudo yum install jq
+# Or download directly
+TRIVY_VERSION=$(curl -s "https://api.github.com/repos/aquasecurity/trivy/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+curl -Lo trivy.tar.gz "https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VERSION}/trivy_${TRIVY_VERSION#v}_Linux-64bit.tar.gz"
+tar xzf trivy.tar.gz trivy
+sudo mv trivy /usr/local/bin/
 
-# macOS
-brew install jq
-
-# Manual installation
-curl -Lo /usr/local/bin/jq https://github.com/stedolan/jq/releases/latest/download/jq-linux64
-chmod +x /usr/local/bin/jq
+# Verify installation
+trivy --version
 ```
 
 </details>
@@ -583,25 +792,18 @@ ls -la sbom_verifier.sh
 </details>
 
 <details>
-<summary>🌐 Node.js Installation Failed</summary>
+<summary>🏗️ Oracle Linux EPEL Error</summary>
 
-**Problem**: NodeSource repository issues
+**Problem**: `epel-release package not available` on Oracle Linux
 
 **Solutions**:
 ```bash
-# Alternative: Install via package manager
-# Ubuntu/Debian
-sudo apt install nodejs npm
+# Use Trivy-only installation (recommended)
+./install_sbom_verifier.sh --trivy-only
 
-# RHEL/CentOS/Fedora
-sudo dnf install nodejs npm
-
-# Alternative: Use snap
-sudo snap install node --classic
-
-# Alternative: Direct Snyk binary installation
-curl -Lo /usr/local/bin/snyk https://github.com/snyk/snyk/releases/latest/download/snyk-linux
-chmod +x /usr/local/bin/snyk
+# Or install manually without EPEL
+sudo dnf install -y curl wget jq libxml2 file
+# Then install Trivy binary manually
 ```
 
 </details>
@@ -614,6 +816,9 @@ chmod +x /usr/local/bin/snyk
 
 # Enable debug output for verification
 bash -x sbom_verifier.sh sbom.json
+
+# Check what Trivy sees
+trivy sbom --debug sbom.json
 
 # Check what Snyk sees
 snyk --debug test --file=sbom.json
@@ -630,6 +835,7 @@ cat /etc/os-release
 
 # Tool versions
 sbom_verifier.sh --help
+trivy --version
 snyk --version
 jq --version
 node --version
@@ -637,7 +843,6 @@ node --version
 # Error output
 sbom_verifier.sh --verbose problematic-sbom.json 2>&1
 ```
-
 
 ## 🤝 Contributing
 
@@ -647,12 +852,14 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 - **🔑 Token Security**: Store Snyk tokens securely, never commit to version control
 - **📁 SBOM Privacy**: SBOM files may contain sensitive dependency information
-- **🌐 Network Access**: Required for Snyk API calls and vulnerability database updates
+- **🌐 Network Access**: Required for Trivy DB updates and Snyk API calls
 - **👤 Permissions**: Installation requires sudo, verification does not
+- **🔄 Database Updates**: Trivy downloads vulnerability databases regularly
 
 ## 🙏 Acknowledgments
 
-- **🛡️ Snyk** for providing security scanning capabilities
+- **🛡️ Trivy Team** for providing excellent open-source vulnerability scanning
+- **🔐 Snyk** for providing commercial security scanning capabilities
 - **📋 SPDX Community** for SBOM standards and tooling
 - **🔄 CycloneDX Community** for SBOM standards and formats
 - **👥 Contributors** and users of this tool
@@ -661,10 +868,10 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 <div align="center">
 
-**🛡️ Keep your software supply chain secure with SBOM Verifier!**
+**🛡️ Keep your software supply chain secure with SBOM Verifier + Trivy!**
 
 Made with ❤️ for the community
 
-[⭐ Star us on GitHub](https://github.com/EvgeniyPatlan/sbom_verifier) • [🍴 Fork](https://github.com/EvgeniyPatlan/sbom_verifier/fork) • [📝 Report Issue](https://github.com/EvgeniyPatlan/sbom_verifier/issues/new)
+[⭐ Star us on GitHub](https://github.com/YOUR_USERNAME/YOUR_REPO) • [🍴 Fork](https://github.com/YOUR_USERNAME/YOUR_REPO/fork) • [📝 Report Issue](https://github.com/YOUR_USERNAME/YOUR_REPO/issues/new)
 
 </div>
