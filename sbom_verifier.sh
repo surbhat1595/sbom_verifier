@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # SBOM Verification Script
-# This script verifies SBOM files using Snyk and other validation methods
+# This script verifies SBOM files using Snyk, Trivy, and other validation methods
 
 # Safer script execution
 set -euo pipefail
@@ -46,12 +46,27 @@ check_dependencies() {
 
     # Check for Snyk
     if command -v snyk >/dev/null 2>&1; then
-        log_success "Snyk CLI found"
+        log_success "Snyk CLI found ($(snyk version))"
     else
-        log_error "Snyk CLI not found. Please install it:"
+        log_warning "Snyk CLI not found. Install with:"
         echo "  npm install -g snyk"
         echo "  # or"
         echo "  curl -Lo /usr/local/bin/snyk https://github.com/snyk/snyk/releases/latest/download/snyk-linux && chmod +x /usr/local/bin/snyk"
+    fi
+
+    # Check for Trivy
+    if command -v trivy >/dev/null 2>&1; then
+        local trivy_version=$(trivy --version | head -n1 | cut -d' ' -f2)
+        log_success "Trivy found (version $trivy_version)"
+    else
+        log_error "Trivy not found. Please install it:"
+        echo "  # Install via package manager:"
+        echo "  sudo apt-get update && sudo apt-get install trivy  # Ubuntu/Debian"
+        echo "  sudo dnf install trivy  # RHEL/Fedora"
+        echo "  brew install trivy  # macOS"
+        echo ""
+        echo "  # Or install manually:"
+        echo "  curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin"
         all_good=false
     fi
 
@@ -83,8 +98,14 @@ check_dependencies() {
 authenticate_snyk() {
     log_info "Checking Snyk authentication..."
 
+    # Skip if Snyk is not available
+    if ! command -v snyk >/dev/null 2>&1; then
+        log_info "Snyk not available, skipping authentication"
+        return 1
+    fi
+
     # Check if token is set via environment variable
-    if [[ -n "$SNYK_TOKEN" ]]; then
+    if [[ -n "${SNYK_TOKEN:-}" ]]; then
         log_info "Using SNYK_TOKEN environment variable"
         if snyk auth --check >/dev/null 2>&1; then
             log_success "Snyk authentication verified via token"
@@ -106,6 +127,19 @@ authenticate_snyk() {
     echo "  2. Set token: export SNYK_TOKEN='your-token'"
     echo "  3. Get token from: https://app.snyk.io/account"
     return 1
+}
+
+# Update Trivy database
+update_trivy_db() {
+    log_info "Updating Trivy vulnerability database..."
+
+    # Update Trivy DB (this is important for accurate results)
+    if trivy image --download-db-only >/dev/null 2>&1; then
+        log_success "Trivy database updated successfully"
+    else
+        log_warning "Failed to update Trivy database. Results may be outdated."
+        log_info "You can manually update with: trivy image --download-db-only"
+    fi
 }
 
 # Detect SBOM format
@@ -187,11 +221,123 @@ verify_file_integrity() {
     return 0
 }
 
+# Verify with Trivy
+verify_with_trivy() {
+    local file="$1"
+    local temp_dir="/tmp/sbom_verification_$$"
+    
+    log_info "Verifying SBOM with Trivy..."
+
+    # Create temporary directory for results
+    mkdir -p "$temp_dir"
+
+    # Test SBOM with Trivy
+    local trivy_result="$temp_dir/trivy_sbom_result.json"
+    local trivy_exit_code=0
+
+    # Run Trivy SBOM scan
+    if trivy sbom --format json --output "$trivy_result" "$file" 2>/dev/null; then
+        log_success "Trivy SBOM scan completed successfully"
+    else
+        trivy_exit_code=$?
+        log_warning "Trivy SBOM scan completed with warnings/errors (exit code: $trivy_exit_code)"
+    fi
+
+    # Parse Trivy results if available and jq is installed
+    if [[ -f "$trivy_result" ]] && command -v jq &> /dev/null; then
+        log_info "Analyzing Trivy results..."
+
+        # Count vulnerabilities by severity
+        local critical_vulns=$(jq -r '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' "$trivy_result" 2>/dev/null || echo "0")
+        local high_vulns=$(jq -r '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' "$trivy_result" 2>/dev/null || echo "0")
+        local medium_vulns=$(jq -r '[.Results[]?.Vulnerabilities[]? | select(.Severity == "MEDIUM")] | length' "$trivy_result" 2>/dev/null || echo "0")
+        local low_vulns=$(jq -r '[.Results[]?.Vulnerabilities[]? | select(.Severity == "LOW")] | length' "$trivy_result" 2>/dev/null || echo "0")
+        local unknown_vulns=$(jq -r '[.Results[]?.Vulnerabilities[]? | select(.Severity == "UNKNOWN")] | length' "$trivy_result" 2>/dev/null || echo "0")
+
+        # Count total packages scanned
+        local total_packages=$(jq -r '[.Results[]?.Packages[]?] | length' "$trivy_result" 2>/dev/null || echo "0")
+
+        log_info "Packages scanned: $total_packages"
+        log_info "Vulnerabilities found:"
+        echo "    Critical: $critical_vulns"
+        echo "    High: $high_vulns"
+        echo "    Medium: $medium_vulns"
+        echo "    Low: $low_vulns"
+        echo "    Unknown: $unknown_vulns"
+
+        # Warn about critical/high vulnerabilities
+        if [[ $critical_vulns -gt 0 ]]; then
+            log_error "Found $critical_vulns CRITICAL vulnerabilities"
+        fi
+
+        if [[ $high_vulns -gt 0 ]]; then
+            log_warning "Found $high_vulns HIGH severity vulnerabilities"
+        fi
+
+        # Generate detailed vulnerability report if verbose mode
+        if [[ "${VERBOSE:-false}" == "true" ]] && [[ $(( critical_vulns + high_vulns )) -gt 0 ]]; then
+            log_info "Top critical/high vulnerabilities:"
+            jq -r '.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL" or .Severity == "HIGH") | "  - \(.VulnerabilityID): \(.Title) (Severity: \(.Severity))"' "$trivy_result" 2>/dev/null | head -10 || true
+        fi
+
+        # Check for license issues
+        local license_count=$(jq -r '[.Results[]?.Licenses[]?] | length' "$trivy_result" 2>/dev/null || echo "0")
+        if [[ $license_count -gt 0 ]]; then
+            log_info "Found $license_count license entries"
+        fi
+
+        # Check for secrets (if Trivy supports it in SBOM mode)
+        local secrets_count=$(jq -r '[.Results[]?.Secrets[]?] | length' "$trivy_result" 2>/dev/null || echo "0")
+        if [[ $secrets_count -gt 0 ]]; then
+            log_warning "Found $secrets_count potential secrets"
+        fi
+
+    elif [[ -f "$trivy_result" ]]; then
+        log_info "Trivy results saved to: $trivy_result"
+        log_warning "jq not available for detailed result analysis"
+    else
+        log_warning "Trivy results not available for analysis"
+    fi
+
+    # Also try scanning for vulnerabilities in the project directory if it exists
+    local project_dir=$(dirname "$file")
+    if [[ -f "$project_dir/package.json" ]] || [[ -f "$project_dir/pom.xml" ]] || [[ -f "$project_dir/requirements.txt" ]] || [[ -f "$project_dir/go.mod" ]] || [[ -f "$project_dir/Cargo.toml" ]]; then
+        log_info "Detected project files, running Trivy filesystem scan..."
+        
+        local fs_result="$temp_dir/trivy_fs_result.json"
+        if trivy fs --format json --output "$fs_result" "$project_dir" 2>/dev/null; then
+            log_success "Trivy filesystem scan completed"
+            
+            if command -v jq &> /dev/null; then
+                local fs_vulns=$(jq -r '[.Results[]?.Vulnerabilities[]?] | length' "$fs_result" 2>/dev/null || echo "0")
+                log_info "Filesystem scan found $fs_vulns vulnerabilities"
+            fi
+        else
+            log_info "Trivy filesystem scan completed with warnings"
+        fi
+    fi
+
+    # Clean up temp files (keep them if verbose for debugging)
+    if [[ "${VERBOSE:-false}" != "true" ]]; then
+        rm -rf "$temp_dir"
+    else
+        log_info "Trivy results saved in: $temp_dir"
+    fi
+
+    return 0
+}
+
 # Verify with Snyk
 verify_with_snyk() {
     local file="$1"
 
     log_info "Verifying SBOM with Snyk..."
+
+    # Skip if Snyk is not available
+    if ! command -v snyk >/dev/null 2>&1; then
+        log_info "Snyk not available, skipping Snyk verification"
+        return 0
+    fi
 
     # Check if Snyk supports SBOM testing
     if snyk sbom --help &> /dev/null; then
@@ -215,7 +361,9 @@ verify_with_snyk() {
             fi
         else
             log_warning "Snyk SBOM test failed or found issues"
-            cat /tmp/snyk_sbom_result.json 2>/dev/null || true
+            if [[ "${VERBOSE:-false}" == "true" ]]; then
+                cat /tmp/snyk_sbom_result.json 2>/dev/null || true
+            fi
         fi
     else
         # Fallback: try to use regular Snyk test on the project
@@ -229,6 +377,9 @@ verify_with_snyk() {
                 log_success "Snyk project test passed"
             else
                 log_warning "Snyk project test found issues"
+                if [[ "${VERBOSE:-false}" == "true" ]]; then
+                    cat /tmp/snyk_project_result.json 2>/dev/null || true
+                fi
             fi
         else
             log_warning "Cannot perform Snyk verification without project context"
@@ -419,6 +570,20 @@ generate_report() {
     echo "Format: $format"
     echo "Timestamp: $(date)"
     echo ""
+    echo "Tools used:"
+    if command -v trivy >/dev/null 2>&1; then
+        echo "  - Trivy: $(trivy --version | head -n1 | cut -d' ' -f2)"
+    fi
+    if command -v snyk >/dev/null 2>&1; then
+        echo "  - Snyk: $(snyk version)"
+    fi
+    if command -v jq >/dev/null 2>&1; then
+        echo "  - jq: $(jq --version)"
+    fi
+    if command -v xmllint >/dev/null 2>&1; then
+        echo "  - xmllint: available"
+    fi
+    echo ""
     echo "Results:"
     echo "  [SUCCESS] Errors: $ERRORS"
     echo "  [WARNING] Warnings: $WARNINGS"
@@ -427,9 +592,13 @@ generate_report() {
 
     if [[ $ERRORS -eq 0 ]]; then
         log_success "SBOM verification PASSED"
+        if [[ $WARNINGS -gt 0 ]]; then
+            echo "  Note: $WARNINGS warnings found - review recommended"
+        fi
         return 0
     else
         log_error "SBOM verification FAILED"
+        echo "  Please address the $ERRORS error(s) found"
         return 1
     fi
 }
@@ -437,27 +606,49 @@ generate_report() {
 # Main function
 main() {
     local file="$1"
-    local verbose="${2:-false}"
 
     echo "SBOM Verification Script"
     echo "========================"
+    
+    if [[ "${VERBOSE:-false}" == "true" ]]; then
+        echo "Running in verbose mode..."
+        echo "File: $file"
+        echo "Options: TRIVY_ONLY=${TRIVY_ONLY:-false}, SNYK_ONLY=${SNYK_ONLY:-false}"
+        echo ""
+    fi
 
     # Check if file is provided
     if [[ -z "$file" ]]; then
-        echo "Usage: $0 <sbom-file> [--verbose]"
+        echo "Usage: $0 <sbom-file> [options]"
         echo ""
         echo "Examples:"
         echo "  $0 sbom.json"
         echo "  $0 sbom.spdx.json --verbose"
-        echo "  $0 sbom.xml"
+        echo "  $0 sbom.xml --trivy-only"
+        echo ""
+        echo "Use --help for more options"
         exit 1
     fi
 
     # Check dependencies
     check_dependencies
+    
+    if [[ "${VERBOSE:-false}" == "true" ]]; then
+        echo "Verbose mode: Dependency check completed"
+        echo ""
+    fi
+
+    # Update Trivy database if not skipped
+    if [[ "${SKIP_TRIVY_UPDATE:-false}" != "true" ]]; then
+        update_trivy_db
+    elif [[ "${VERBOSE:-false}" == "true" ]]; then
+        log_info "Skipping Trivy database update as requested"
+    fi
 
     # Authenticate with Snyk (optional)
-    authenticate_snyk || true
+    if [[ "${SNYK_ONLY:-false}" != "true" ]] && [[ "${TRIVY_ONLY:-false}" != "true" ]]; then
+        authenticate_snyk || true
+    fi
 
     # Verify file integrity
     if ! verify_file_integrity "$file"; then
@@ -467,6 +658,11 @@ main() {
     # Detect SBOM format
     local format=$(detect_sbom_format "$file")
     log_info "Detected format: $format"
+    
+    if [[ "${VERBOSE:-false}" == "true" ]]; then
+        local file_size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file" 2>/dev/null)
+        log_info "File size: $(( file_size / 1024 )) KB"
+    fi
 
     # Format-specific verification
     case "$format" in
@@ -484,8 +680,20 @@ main() {
             ;;
     esac
 
-    # Verify with Snyk
-    verify_with_snyk "$file"
+    # Run security scans
+    if [[ "${SNYK_ONLY:-false}" != "true" ]]; then
+        if [[ "${VERBOSE:-false}" == "true" ]]; then
+            log_info "Starting Trivy verification..."
+        fi
+        verify_with_trivy "$file"
+    fi
+
+    if [[ "${TRIVY_ONLY:-false}" != "true" ]]; then
+        if [[ "${VERBOSE:-false}" == "true" ]]; then
+            log_info "Starting Snyk verification..."
+        fi
+        verify_with_snyk "$file"
+    fi
 
     # Analyze content
     analyze_sbom_content "$file" "$format"
@@ -503,6 +711,9 @@ VERBOSE=false
 SNYK_TOKEN=""
 SNYK_ORG=""
 SBOM_FILE=""
+TRIVY_ONLY=false
+SNYK_ONLY=false
+SKIP_TRIVY_UPDATE=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -530,41 +741,79 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             ;;
+        --trivy-only)
+            TRIVY_ONLY=true
+            shift
+            ;;
+        --snyk-only)
+            SNYK_ONLY=true
+            shift
+            ;;
+        --skip-trivy-update)
+            SKIP_TRIVY_UPDATE=true
+            shift
+            ;;
         --help|-h)
-            echo "SBOM Verification Script"
-            echo ""
-            echo "Usage: $0 [options] <sbom-file>"
-            echo ""
-            echo "Options:"
-            echo "  --verbose, -v                Enable verbose output"
-            echo "  --snyk-token, -t TOKEN       Set Snyk API token"
-            echo "  --snyk-org, -o ORG_ID        Set Snyk organization ID"
-            echo "  --help, -h                   Show this help message"
-            echo ""
-            echo "Examples:"
-            echo "  $0 sbom.json"
-            echo "  $0 --verbose sbom.spdx.json"
-            echo "  $0 --snyk-token=abc123 --snyk-org=my-org sbom.json"
-            echo "  $0 -t abc123 -o my-org -v sbom.json"
-            echo ""
-            echo "Supported formats:"
-            echo "  - SPDX JSON"
-            echo "  - SPDX XML"
-            echo "  - SPDX Tag-Value"
-            echo "  - CycloneDX JSON"
-            echo "  - CycloneDX XML"
-            echo ""
-            echo "Requirements:"
-            echo "  - Snyk CLI (recommended)"
-            echo "  - jq (for JSON processing)"
-            echo "  - xmllint (for XML processing)"
-            echo ""
-            echo "Authentication:"
-            echo "  You can authenticate with Snyk in several ways:"
-            echo "  1. Command line: --snyk-token=your-token"
-            echo "  2. Environment: export SNYK_TOKEN=your-token"
-            echo "  3. Interactive: snyk auth"
-            echo "  4. Get token from: https://app.snyk.io/account"
+            cat << 'EOF'
+SBOM Verification Script with Trivy and Snyk
+
+Usage: $0 [options] <sbom-file>
+
+Options:
+  --verbose, -v                Enable verbose output
+  --snyk-token, -t TOKEN       Set Snyk API token
+  --snyk-org, -o ORG_ID        Set Snyk organization ID
+  --trivy-only                 Run only Trivy verification
+  --snyk-only                  Run only Snyk verification
+  --skip-trivy-update          Skip Trivy database update
+  --help, -h                   Show this help message
+
+Examples:
+  $0 sbom.json
+  $0 --verbose sbom.spdx.json
+  $0 --trivy-only sbom.json
+  $0 --snyk-token=abc123 --snyk-org=my-org sbom.json
+  $0 -t abc123 -o my-org -v sbom.json
+
+Supported formats:
+  - SPDX JSON
+  - SPDX XML
+  - SPDX Tag-Value
+  - CycloneDX JSON
+  - CycloneDX XML
+
+Requirements:
+  - Trivy (recommended for vulnerability scanning)
+  - Snyk CLI (optional, for additional vulnerability checks)
+  - jq (for JSON processing)
+  - xmllint (for XML processing)
+
+Tool Installation:
+  Trivy:
+    - Package manager: sudo apt-get install trivy
+    - Manual: curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
+  Snyk:
+    - npm install -g snyk
+    - curl -Lo /usr/local/bin/snyk https://github.com/snyk/snyk/releases/latest/download/snyk-linux && chmod +x /usr/local/bin/snyk
+
+Authentication:
+  Snyk (optional):
+    1. Command line: --snyk-token=your-token
+    2. Environment: export SNYK_TOKEN=your-token
+    3. Interactive: snyk auth
+    4. Get token from: https://app.snyk.io/account
+
+  Trivy:
+    - No authentication required for basic usage
+    - Database updates automatically
+
+Environment Variables:
+  SNYK_TOKEN                   Snyk API token
+  SNYK_ORG                     Snyk organization ID
+  SKIP_TRIVY_UPDATE           Set to 'true' to skip DB update
+  VERBOSE                     Set to 'true' for verbose output
+EOF
             exit 0
             ;;
         --*)
@@ -584,5 +833,24 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Validate conflicting options
+if [[ "$TRIVY_ONLY" == "true" && "$SNYK_ONLY" == "true" ]]; then
+    log_error "Cannot specify both --trivy-only and --snyk-only"
+    exit 1
+fi
+
+# Check if SBOM file was provided
+if [[ -z "$SBOM_FILE" ]]; then
+    log_error "No SBOM file specified"
+    echo "Use --help for usage information"
+    exit 1
+fi
+
+# Export variables for use in functions
+export VERBOSE
+export TRIVY_ONLY
+export SNYK_ONLY
+export SKIP_TRIVY_UPDATE
+
 # Run main function
-main "$SBOM_FILE" "$VERBOSE"
+main "$SBOM_FILE"
