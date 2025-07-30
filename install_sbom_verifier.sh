@@ -380,7 +380,7 @@ install_sbom_verifier() {
     mkdir -p "$TEMP_DIR"
     
     # GitHub repository details
-    local repo_url="https://raw.githubusercontent.com/EvgeniyPatlan/sbom_verifier/refs/heads/trivy"
+    local repo_url="https://raw.githubusercontent.com/EvgeniyPatlan/sbom_verifier/refs/heads/main"
     local script_url="$repo_url/sbom_verifier.sh"
     local script_path="$INSTALL_DIR/$SCRIPT_NAME"
     
