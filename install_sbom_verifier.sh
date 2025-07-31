@@ -484,6 +484,11 @@ update_trivy_database() {
         if trivy image --download-db-only >/dev/null 2>&1; then
             log_success "Trivy database updated successfully"
         else
+            for i in {1..3}; do
+                trivy image --download-db-only && break
+                echo "Failed to update Trivy database, retrying in 10 seconds..."
+                sleep 10
+            done
             log_warning "Failed to update Trivy database initially. This is normal for first-time installation."
             log_info "Trivy will update its database automatically on first scan"
         fi
