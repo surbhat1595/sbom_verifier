@@ -104,7 +104,7 @@ install_system_packages() {
         amzn)
             log_info "Installing packages for Amazon Linux..."
             yum update -y
-            yum install -y curl wget jq libxml2 file
+            yum install -y wget jq libxml2 file
             ;;
         *)
             log_warning "Unknown OS: $OS. Attempting generic installation..."
@@ -141,8 +141,8 @@ install_trivy() {
         ubuntu|debian)
             log_info "Installing Trivy for Ubuntu/Debian..."
             # Add Trivy repository
-            wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
-            echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+            wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | apt-key add -
+            echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | tee -a /etc/apt/sources.list.d/trivy.list
             apt update
             apt install -y trivy
             ;;
