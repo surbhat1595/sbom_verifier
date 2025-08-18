@@ -4,7 +4,7 @@
 # Supports Ubuntu, Debian, RHEL, CentOS, Fedora, Rocky Linux, AlmaLinux, Amazon Linux
 # Installs: Trivy, Snyk CLI, jq, xmllint, and the SBOM verifier script
 
-set -e
+set -ex
 
 # Colors for output
 RED='\033[0;31m'
@@ -481,14 +481,9 @@ update_trivy_database() {
     log_info "Updating Trivy vulnerability database..."
     
     if command -v trivy &> /dev/null; then
-        if trivy image --download-db-only >/dev/null 2>&1; then
+        if trivy image --download-db-only harbor-docker.int.percona.com/dockerhub-cache/aquasec/trivy-db:2 >/dev/null 2>&1; then
             log_success "Trivy database updated successfully"
         else
-            for i in {1..3}; do
-                trivy image --download-db-only && break
-                echo "Failed to update Trivy database, retrying in 10 seconds..."
-                sleep 10
-            done
             log_warning "Failed to update Trivy database initially. This is normal for first-time installation."
             log_info "Trivy will update its database automatically on first scan"
         fi
